@@ -1,0 +1,54 @@
+name: Issue date reminder
+
+on:
+  schedule:
+    # 00:15 JST (15:15 UTC on the previous day)
+    - cron: "15 15 * * *"
+  workflow_dispatch:
+    inputs:
+      today:
+        description: "基準日 (YYYY-MM-DD)。空欄なら現在の JST 日付"
+        required: false
+        type: string
+      dry_run:
+        description: "Discord へ送信せず通知内容をログで確認する"
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: issue-date-reminder
+  cancel-in-progress: false
+
+jobs:
+  remind:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: ${{ vars.REMINDER_ENVIRONMENT || 'Reminder' }}
+      deployment: false
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Test reminder script
+        run: node --test .github/scripts/issue-date-reminder.test.mjs
+
+      - name: Check issue dates and notify Discord
+        env:
+          GH_PROJECTS_TOKEN: ${{ secrets.PROJECTS_TOKEN }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          MENTION_USER_ID: ${{ secrets.MENTION_USER_ID }}
+          GITHUB_GRAPHQL_URL: ${{ github.graphql_url }}
+          REMINDER_TIME_ZONE: ${{ vars.REMINDER_TIME_ZONE || 'Asia/Tokyo' }}
+          START_DATE_FIELD: ${{ vars.START_DATE_FIELD || 'Start date' }}
+          TARGET_DATE_FIELD: ${{ vars.TARGET_DATE_FIELD || 'Target date' }}
+          PROJECT_URL: ${{ vars.PROJECT_URL }}
+          TODAY_OVERRIDE: ${{ inputs.today }}
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || false }}
+        run: node .github/scripts/issue-date-reminder.mjs
