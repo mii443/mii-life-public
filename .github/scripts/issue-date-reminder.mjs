@@ -65,6 +65,14 @@ export function parseBoolean(value) {
   return ["1", "true", "yes", "on"].includes(String(value).trim().toLowerCase());
 }
 
+export function parseReminderDayOffset(value) {
+  const offset = Number(value ?? 1);
+  if (!Number.isInteger(offset) || ![0, 1].includes(offset)) {
+    throw new Error("REMINDER_DAY_OFFSET must be 0 (today) or 1 (tomorrow)");
+  }
+  return offset;
+}
+
 export function parseRepository(value) {
   const parts = required(value, "GITHUB_REPOSITORY").split("/");
   if (parts.length !== 2 || parts.some((part) => !part)) {
@@ -271,12 +279,15 @@ function reminderLine(reminder) {
 
 export function buildDiscordMessages(
   reminders,
-  { mentionUserId, reminderDate, contentLimit = DISCORD_CONTENT_LIMIT },
+  { mentionUserId, reminderDate, dayOffset = 1, contentLimit = DISCORD_CONTENT_LIMIT },
 ) {
   if (!reminders.length) return [];
 
-  const firstHeader = `<@${mentionUserId}> 明日（${reminderDate}）が開始日または目標日の Issue があります。`;
-  const continuationHeader = `明日（${reminderDate}）が開始日または目標日の Issue（続き）です。`;
+  const isToday = dayOffset === 0;
+  const dayLabel = isToday ? "今日" : "明日";
+  const completionText = isToday ? "で、まだcloseされていない" : "の";
+  const firstHeader = `<@${mentionUserId}> ${dayLabel}（${reminderDate}）が開始日または目標日${completionText} Issue があります。`;
+  const continuationHeader = `${dayLabel}（${reminderDate}）が開始日または目標日${completionText} Issue（続き）です。`;
   const messages = [];
   let current = firstHeader;
 
@@ -352,7 +363,8 @@ export async function main(env = process.env) {
   const today = env.TODAY_OVERRIDE?.trim()
     ? validateIsoDate(env.TODAY_OVERRIDE.trim(), "TODAY_OVERRIDE")
     : dateInTimeZone(new Date(), timeZone);
-  const reminderDate = addDays(today, 1);
+  const dayOffset = parseReminderDayOffset(env.REMINDER_DAY_OFFSET);
+  const reminderDate = addDays(today, dayOffset);
   const startField = env.START_DATE_FIELD?.trim() || "Start date";
   const targetField = env.TARGET_DATE_FIELD?.trim() || "Target date";
   const endpoint = env.GITHUB_GRAPHQL_URL?.trim() || DEFAULT_GRAPHQL_URL;
@@ -367,7 +379,7 @@ export async function main(env = process.env) {
       graphqlRequest({ endpoint, token, query, variables }),
   });
   const reminders = collectReminders(issues, reminderDate, env.PROJECT_URL ?? "");
-  const messages = buildDiscordMessages(reminders, { mentionUserId, reminderDate });
+  const messages = buildDiscordMessages(reminders, { mentionUserId, reminderDate, dayOffset });
 
   if (!messages.length) {
     console.log(`Checked ${issues.length} open issue(s); no reminders are due.`);

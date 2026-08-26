@@ -8,6 +8,7 @@ import {
   dateInTimeZone,
   fetchOpenIssues,
   parseRepository,
+  parseReminderDayOffset,
   sendDiscordMessage,
   validateDiscordWebhookUrl,
   validateIsoDate,
@@ -22,6 +23,13 @@ test("JST の日付と翌日を計算する", () => {
 test("不正な日付とリポジトリ名を拒否する", () => {
   assert.throws(() => validateIsoDate("2026-02-29"), /valid calendar date/);
   assert.throws(() => parseRepository("owner/repo/extra"), /owner\/name/);
+});
+
+test("通知対象を今日または明日だけに制限する", () => {
+  assert.equal(parseReminderDayOffset("0"), 0);
+  assert.equal(parseReminderDayOffset("1"), 1);
+  assert.equal(parseReminderDayOffset(undefined), 1);
+  assert.throws(() => parseReminderDayOffset("2"), /must be 0/);
 });
 
 test("Discord 以外の webhook URL を拒否する", () => {
@@ -133,6 +141,28 @@ test("Discord の文字数上限で分割し、メンションは最初の投稿
   assert.ok(messages.every((message) => message.length <= 240));
   assert.match(messages[0], /^<@123456789012345678>/);
   assert.doesNotMatch(messages[1], /<@123456789012345678>/);
+});
+
+test("当日通知は未closeであることを明記する", () => {
+  const messages = buildDiscordMessages(
+    [
+      {
+        number: 1,
+        title: "Today's task",
+        url: "https://github.com/example/repo/issues/1",
+        kinds: ["target"],
+        projects: [],
+      },
+    ],
+    {
+      mentionUserId: "123456789012345678",
+      reminderDate: "2026-08-26",
+      dayOffset: 0,
+    },
+  );
+
+  assert.match(messages[0], /今日（2026-08-26）/);
+  assert.match(messages[0], /まだcloseされていない/);
 });
 
 test("Discord payload は指定ユーザー以外の mention を許可しない", async () => {
