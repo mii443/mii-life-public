@@ -123,6 +123,30 @@ test("PROJECT_URL で対象 Project を絞り込む", () => {
   assert.equal(reminders[0].projects[0].title, "B");
 });
 
+test("当日通知では開始日から目標日までの期間中にある Issue も対象にする", () => {
+  const issues = [
+    {
+      number: 2,
+      title: "In progress",
+      url: "https://github.com/example/repo/issues/2",
+      projectItems: {
+        nodes: [
+          {
+            project: { closed: false, title: "Life", url: "https://github.com/users/example/projects/1" },
+            startDate: { date: "2026-08-25" },
+            targetDate: { date: "2026-08-28" },
+          },
+        ],
+      },
+    },
+  ];
+
+  assert.equal(collectReminders(issues, "2026-08-26").length, 0);
+  const reminders = collectReminders(issues, "2026-08-26", "", { includeActiveRange: true });
+  assert.equal(reminders.length, 1);
+  assert.deepEqual(reminders[0].kinds, ["active"]);
+});
+
 test("Discord の文字数上限で分割し、メンションは最初の投稿だけに付ける", () => {
   const reminders = Array.from({ length: 5 }, (_, index) => ({
     number: index + 1,
@@ -150,7 +174,7 @@ test("当日通知は未closeであることを明記する", () => {
         number: 1,
         title: "Today's task",
         url: "https://github.com/example/repo/issues/1",
-        kinds: ["target"],
+        kinds: ["active"],
         projects: [],
       },
     ],
@@ -162,7 +186,9 @@ test("当日通知は未closeであることを明記する", () => {
   );
 
   assert.match(messages[0], /今日（2026-08-26）/);
+  assert.match(messages[0], /開始日・目標日、またはその期間内/);
   assert.match(messages[0], /まだcloseされていない/);
+  assert.match(messages[0], /\*\*期間中\*\*/);
 });
 
 test("Discord payload は指定ユーザー以外の mention を許可しない", async () => {

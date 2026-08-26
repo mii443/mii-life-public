@@ -211,7 +211,12 @@ function canonicalUrl(value) {
   return String(value ?? "").replace(/\/$/, "");
 }
 
-export function collectReminders(issues, reminderDate, projectUrl = "") {
+export function collectReminders(
+  issues,
+  reminderDate,
+  projectUrl = "",
+  { includeActiveRange = false } = {},
+) {
   validateIsoDate(reminderDate, "reminder date");
   const projectFilter = canonicalUrl(projectUrl.trim());
   const collected = new Map();
@@ -224,8 +229,19 @@ export function collectReminders(issues, reminderDate, projectUrl = "") {
       }
 
       const kinds = [];
-      if (item.startDate?.date === reminderDate) kinds.push("start");
-      if (item.targetDate?.date === reminderDate) kinds.push("target");
+      const startDate = item.startDate?.date;
+      const targetDate = item.targetDate?.date;
+      if (startDate === reminderDate) kinds.push("start");
+      if (targetDate === reminderDate) kinds.push("target");
+      if (
+        includeActiveRange &&
+        startDate &&
+        targetDate &&
+        startDate < reminderDate &&
+        reminderDate < targetDate
+      ) {
+        kinds.push("active");
+      }
       if (!kinds.length) continue;
 
       let reminder = collected.get(issue.url);
@@ -264,6 +280,7 @@ function reminderLine(reminder) {
   const labels = [];
   if (reminder.kinds.includes("start")) labels.push("開始日");
   if (reminder.kinds.includes("target")) labels.push("目標日");
+  if (reminder.kinds.includes("active")) labels.push("期間中");
 
   const title = escapeDiscordMarkdown(reminder.title).slice(0, 300);
   const displayedProjects = reminder.projects.slice(0, 3);
@@ -284,10 +301,12 @@ export function buildDiscordMessages(
   if (!reminders.length) return [];
 
   const isToday = dayOffset === 0;
-  const dayLabel = isToday ? "今日" : "明日";
-  const completionText = isToday ? "で、まだcloseされていない" : "の";
-  const firstHeader = `<@${mentionUserId}> ${dayLabel}（${reminderDate}）が開始日または目標日${completionText} Issue があります。`;
-  const continuationHeader = `${dayLabel}（${reminderDate}）が開始日または目標日${completionText} Issue（続き）です。`;
+  const firstHeader = isToday
+    ? `<@${mentionUserId}> 今日（${reminderDate}）が開始日・目標日、またはその期間内で、まだcloseされていない Issue があります。`
+    : `<@${mentionUserId}> 明日（${reminderDate}）が開始日または目標日の Issue があります。`;
+  const continuationHeader = isToday
+    ? `今日（${reminderDate}）が開始日・目標日、またはその期間内で、まだcloseされていない Issue（続き）です。`
+    : `明日（${reminderDate}）が開始日または目標日の Issue（続き）です。`;
   const messages = [];
   let current = firstHeader;
 
@@ -378,7 +397,9 @@ export async function main(env = process.env) {
     request: (query, variables) =>
       graphqlRequest({ endpoint, token, query, variables }),
   });
-  const reminders = collectReminders(issues, reminderDate, env.PROJECT_URL ?? "");
+  const reminders = collectReminders(issues, reminderDate, env.PROJECT_URL ?? "", {
+    includeActiveRange: dayOffset === 0,
+  });
   const messages = buildDiscordMessages(reminders, { mentionUserId, reminderDate, dayOffset });
 
   if (!messages.length) {
