@@ -1,11 +1,6 @@
 name: Issue date reminder
 
 on:
-  schedule:
-    # 00:15 JST (15:15 UTC on the previous day)
-    - cron: "15 15 * * *"
-    # 22:30 JST (13:30 UTC): remind about today's still-open tasks.
-    - cron: "30 13 * * *"
   workflow_dispatch:
     inputs:
       today:
@@ -60,6 +55,6 @@ jobs:
           TARGET_DATE_FIELD: ${{ vars.TARGET_DATE_FIELD || 'Target date' }}
           PROJECT_URL: ${{ vars.PROJECT_URL }}
           TODAY_OVERRIDE: ${{ inputs.today }}
-          REMINDER_DAY_OFFSET: ${{ (github.event.schedule == '30 13 * * *' || inputs.reminder_day == 'today') && '0' || '1' }}
-          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || false }}
+          REMINDER_DAY_OFFSET: ${{ inputs.reminder_day == 'today' && '0' || '1' }}
+          DRY_RUN: ${{ inputs.dry_run }}
         run: node .github/scripts/issue-date-reminder.mjs
